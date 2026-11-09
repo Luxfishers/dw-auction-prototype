@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Davis & White Auctions Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500;6..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: cellar-list catalogue — a sticky auction bar over a grid of lot "labels"; drawer for lot detail; admin as a working console */
+:root{
+  --bg:#f4f5f2; --surface:#ffffff; --surface-2:#eceee9; --line:#d6dad3;
+  --fg:#1b221f; --muted:#5d6762;
+  --claret:#7a1f2b; --claret-soft:#f3e4e5; --bottle:#2f4a3f; --brass:#9a7531;
+  --good:#2d6a46; --good-soft:#e2f0e7; --warn:#93620e; --warn-soft:#f7ecd6; --bad:#a3262f; --bad-soft:#f8e2e3;
+  --shadow:0 1px 2px rgba(20,30,25,.06),0 6px 24px rgba(20,30,25,.08);
+  --f-display:"Bodoni Moda","Didot","Bodoni 72",Georgia,serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111513; --surface:#181e1b; --surface-2:#202723; --line:#2f3833;
+  --fg:#e6eae7; --muted:#9aa49f;
+  --claret:#e0707c; --claret-soft:#3a2023; --bottle:#8fb5a3; --brass:#d2ad66;
+  --good:#7cc596; --good-soft:#1d3226; --warn:#e2b45f; --warn-soft:#352b17; --bad:#ee7b84; --bad-soft:#3b1d20;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 24px rgba(0,0,0,.35); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#181e1b; --surface-2:#202723; --line:#2f3833;
+  --fg:#e6eae7; --muted:#9aa49f;
+  --claret:#e0707c; --claret-soft:#3a2023; --bottle:#8fb5a3; --brass:#d2ad66;
+  --good:#7cc596; --good-soft:#1d3226; --warn:#e2b45f; --warn-soft:#352b17; --bad:#ee7b84; --bad-soft:#3b1d20;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 24px rgba(0,0,0,.35); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--claret);outline-offset:2px}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+h1,h2,h3{text-wrap:balance;margin:0}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+.brand b{font-family:var(--f-display);font-size:22px;font-weight:700;letter-spacing:.01em}
+.brand span{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.proto{font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding:3px 8px;border-radius:99px;background:var(--warn-soft);color:var(--warn);font-weight:600}
+nav.tabs{display:flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:10px}
+nav.tabs a{padding:6px 12px;border-radius:7px;text-decoration:none;color:var(--muted);font-weight:500;font-size:14px}
+nav.tabs a[aria-current="page"]{background:var(--surface);color:var(--fg);box-shadow:var(--shadow)}
+
+/* auction bar */
+.abar{border-bottom:1px solid var(--line);background:var(--bg)}
+.abar .wrap{display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap;padding-block:22px 18px}
+.abar h1{font-family:var(--f-display);font-size:clamp(28px,4vw,40px);font-weight:500;line-height:1.1}
+.abar .sub{color:var(--muted);margin-top:4px;max-width:62ch}
+.abar .grow{flex:1 1 360px;min-width:0}
+.stats{display:flex;gap:20px;flex-wrap:wrap}
+.stat{min-width:0}
+.stat small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.stat strong{font-size:18px}
+.demo{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:9px;font-weight:500;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--claret);border-color:var(--claret);color:#fff}
+:root[data-theme="dark"] .btn.primary{color:#1a0d0f}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{color:#1a0d0f}}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.small{padding:5px 10px;font-size:13px}
+
+/* filters */
+.filters{display:flex;gap:8px;flex-wrap:wrap;padding-block:16px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:13px;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;padding-bottom:48px}
+.lot{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0;cursor:pointer;transition:border-color .15s}
+.lot:hover{border-color:var(--muted)}
+.lot .art{height:150px;background:var(--surface-2);display:flex;align-items:flex-end;justify-content:center;position:relative}
+.lot .art svg{height:136px}
+.lot .lotno{position:absolute;top:10px;left:12px;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.watch{position:absolute;top:6px;right:8px;border:0;background:transparent;font-size:20px;color:var(--muted);line-height:1;padding:4px}
+.watch[aria-pressed="true"]{color:var(--brass)}
+.lot .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
+.lot h3{font-size:15px;font-weight:600;line-height:1.3}
+.meta{font-size:13px;color:var(--muted)}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.big{font-size:20px;font-weight:500}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--muted)}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.claret{background:var(--claret-soft);color:var(--claret)}
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:auto}
+.dual div{background:var(--surface-2);border-radius:8px;padding:6px 8px}
+.dual div.cash{background:var(--good-soft)}
+.dual small{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.dual div.cash small{color:var(--good)}
+.dual strong{font-family:var(--f-mono);font-size:14px;font-weight:500}
+.time{font-family:var(--f-mono);font-size:13px}
+.time.soon{color:var(--bad);font-weight:500}
+.closed{opacity:.72}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(10,15,12,.45);z-index:40}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);z-index:41;overflow-y:auto;box-shadow:var(--shadow);padding:calc(env(safe-area-inset-top,0px) + 18px) max(20px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 28px) 20px;display:flex;flex-direction:column;gap:16px}
+.drawer .art{background:var(--surface-2);border-radius:12px;height:220px;display:flex;align-items:flex-end;justify-content:center}
+.drawer .art svg{height:200px}
+.drawer h2{font-family:var(--f-display);font-size:28px;font-weight:500;line-height:1.15}
+.close{align-self:flex-end;border:0;background:var(--surface-2);border-radius:99px;width:34px;height:34px;font-size:18px}
+dl.spec{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;font-size:14px}
+dl.spec dt{color:var(--muted)}
+dl.spec dd{margin:0}
+.bidbox{border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.bidrow{display:flex;gap:8px;flex-wrap:wrap}
+.bidrow input{flex:1 1 140px;min-width:0;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--surface)}
+.note{font-size:12.5px;color:var(--muted)}
+.hist{font-size:13px;display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto}
+.hist div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed var(--line);padding-bottom:3px}
+.you{color:var(--claret);font-weight:600}
+
+/* sections */
+.section{padding-block:24px 48px;display:flex;flex-direction:column;gap:20px}
+.section h2{font-family:var(--f-display);font-size:28px;font-weight:500}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.panel h3{font-size:16px;font-weight:600;margin-bottom:10px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+td.r,th.r{text-align:right}
+.inv{font-size:14px}
+.inv .line{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+.inv .tot{border-top:2px solid var(--fg);margin-top:6px;padding-top:8px;font-weight:600}
+.paybox{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.paybox div{border:1px solid var(--line);border-radius:10px;padding:12px}
+.paybox div.cash{border-color:var(--good);background:var(--good-soft)}
+.paybox small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.paybox strong{font-family:var(--f-mono);font-size:20px;font-weight:500}
+.empty{color:var(--muted);font-size:14px;padding:12px 0}
+
+/* admin */
+.drop{border:2px dashed var(--line);border-radius:12px;padding:20px;text-align:center;color:var(--muted);background:var(--bg)}
+.drop.over{border-color:var(--claret);color:var(--claret)}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}
+.thumbs img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);min-width:0}
+.form input,.form select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--surface);color:var(--fg);min-width:0;width:100%}
+.form .full{grid-column:1/-1}
+.comp{display:flex;flex-direction:column;gap:10px}
+.rangebar{position:relative;height:34px;background:var(--surface-2);border-radius:8px;margin-top:6px}
+.rangebar .band{position:absolute;top:0;bottom:0;background:var(--good-soft);border-left:2px solid var(--good);border-right:2px solid var(--good)}
+.rangebar .dot{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:var(--bottle);transform:translate(-50%,-50%)}
+.rangebar .dot.est{background:var(--brass);width:12px;height:12px;border-radius:2px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bottle);margin-right:4px;vertical-align:-1px}
+.legend i.est{background:var(--brass);border-radius:2px}
+.legend i.band{background:var(--good-soft);border:2px solid var(--good);border-radius:2px}
+
+/* toast */
+.toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100% - 32px))}
+.toast{background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:14px;box-shadow:var(--shadow);animation:in .25s ease-out}
+.toast.bad{background:var(--bad);color:#fff}
+.toast.good{background:var(--good);color:#fff}
+@keyframes in{from{transform:translateY(8px);opacity:.3}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.toast{animation:none}.lot{transition:none}}
+footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+footer .wrap{padding-block:18px;display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+@media (max-width:560px){.abar .wrap{gap:14px}.dual strong{font-size:13px}.paybox{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><b>Davis &amp; White</b><span>Fine Wine Auctions</span><span class="proto">Prototype</span></div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#catalogue" data-view="catalogue">Auction</a>
+      <a href="#account" data-view="account">My account</a>
+      <a href="#admin" data-view="admin">Admin</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- CATALOGUE -->
+  <section id="v-catalogue">
+    <div class="abar"><div class="wrap">
+      <div class="grow">
+        <h1>Sunday Cellar Auction</h1>
+        <p class="sub">Demo auction with sample lots and simulated rival bidders. Lots close one after another every 90 seconds here; real auctions close on Sunday evenings. Bids are per bottle and every price includes the 15% buyer's premium and GST.</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><small>Bidding as</small><strong>Bidder 1042</strong></div>
+        <div class="stat"><small>Winning</small><strong class="num" id="s-winning">0</strong></div>
+        <div class="stat"><small>Next close</small><strong class="num" id="s-next">–</strong></div>
+      </div>
+      <div class="demo">
+        <button class="btn small" id="ff">Skip ahead 1 min</button>
+        <button class="btn small" id="reset">Restart demo</button>
+      </div>
+    </div></div>
+    <div class="wrap">
+      <div class="filters" role="group" aria-label="Filter lots">
+        <button class="chip" data-f="all" aria-pressed="true">All lots</button>
+        <button class="chip" data-f="red" aria-pressed="false">Red</button>
+        <button class="chip" data-f="white" aria-pressed="false">White &amp; sparkling</button>
+        <button class="chip" data-f="whisky" aria-pressed="false">Whisky &amp; spirits</button>
+        <button class="chip" data-f="watch" aria-pressed="false">Watchlist</button>
+        <button class="chip" data-f="mine" aria-pressed="false">My bids</button>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section id="v-account" hidden>
+    <div class="wrap section">
+      <h2>My account</h2>
+      <div class="cols">
+        <div class="panel">
+          <h3>My bids</h3>
+          <div class="tablewrap"><table><thead><tr><th>Lot</th><th class="r">Current</th><th class="r">My max</th><th>Status</th></tr></thead><tbody id="mybids"></tbody></table></div>
+        </div>
+        <div class="panel inv">
+          <h3>Invoice preview</h3>
+          <div id="invoice"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN -->
+  <section id="v-admin" hidden>
+    <div class="wrap section">
+      <h2>Admin console</h2>
+      <div class="panel">
+        <h3>Lots in this auction</h3>
+        <div class="tablewrap"><table><thead><tr><th>Lot</th><th>Wine or spirit</th><th class="r">Units</th><th class="r">Estimate / btl</th><th class="r">Reserve / btl</th><th class="r">Current / btl</th><th class="r">Bids</th><th>Status</th></tr></thead><tbody id="adminlots"></tbody></table></div>
+      </div>
+
+      <div class="cols">
+        <div class="panel">
+          <h3>Add a lot</h3>
+          <div class="drop" id="drop" tabindex="0">
+            <strong>Drop bottle photos here</strong><br><span class="note">or</span>
+            <label class="btn small" style="display:inline-block;margin-top:6px">Choose photos<input type="file" id="files" accept="image/*" multiple hidden></label>
+            <div class="thumbs" id="thumbs"></div>
+          </div>
+          <p class="note">Photos are resized automatically. "Read label" stands in for AI label reading, which fills the fields for staff to check.</p>
+          <div class="form" id="addform">
+            <label class="full">Wine or spirit<input id="a-name" placeholder="e.g. Penfolds St Henri Shiraz"></label>
+            <label>Vintage<input id="a-vintage" placeholder="2015"></label>
+            <label>Category<select id="a-cat"><option value="red">Red</option><option value="white">White &amp; sparkling</option><option value="whisky">Whisky &amp; spirits</option></select></label>
+            <label>Bottles in lot<input id="a-units" type="number" min="1" value="1"></label>
+            <label>Size<select id="a-size"><option>750ml</option><option>1.5L</option><option>700ml</option><option>375ml</option></select></label>
+            <label>Closure<select id="a-closure"><option>Cork</option><option>Screwcap</option><option>Stopper</option></select></label>
+            <label>Ullage / fill<select id="a-ullage"><option>Into neck</option><option>Base of neck</option><option>Very top shoulder</option><option>Top shoulder</option><option>Full</option></select></label>
+            <label>Label<select id="a-label"><option>Excellent</option><option>Good</option><option>Lightly scuffed</option><option>Damaged</option></select></label>
+            <label>Low estimate / btl ($)<input id="a-lo" type="number" min="1" value="80"></label>
+            <label>High estimate / btl ($)<input id="a-hi" type="number" min="1" value="110"></label>
+            <label>Reserve / btl ($)<input id="a-res" type="number" min="0" value="75"></label>
+          </div>
+          <div class="bidrow" style="margin-top:12px">
+            <button class="btn" id="readlabel">Read label</button>
+            <button class="btn primary" id="addlot">Add to auction</button>
+          </div>
+        </div>
+
+        <div class="panel comp">
+          <h3>Reserve assistant</h3>
+          <label class="form" style="display:block"><span class="note">Lot</span><select id="ra-lot"></select></label>
+          <div id="ra"></div>
+        </div>
+      </div>
+
+      <div class="cols">
+        <div class="panel">
+          <h3>Fees and payment settings</h3>
+          <div class="form">
+            <label>Buyer's premium (incl. GST)<input id="set-bp" type="number" step="0.5" value="15"></label>
+            <label>Seller's commission (incl. GST)<input id="set-sc" type="number" step="0.5" value="15"></label>
+            <label>Cash and bank discount type<select id="set-dtype"><option value="pct">Percentage</option><option value="fixed">Fixed amount per invoice</option></select></label>
+            <label>Discount value<input id="set-dval" type="number" step="0.1" value="1.5"></label>
+            <label>Minimum invoice for discount ($)<input id="set-dmin" type="number" value="0"></label>
+            <label>Soft close window (min)<input id="set-soft" type="number" value="5" disabled></label>
+          </div>
+          <p class="note" style="margin-top:10px">The card price is the standard price. The cash price is shown as a discount off it, never as a card surcharge. Increments: $1 to $99, $5 to $499, $10 to $999, $25 from $1,000.</p>
+        </div>
+        <div class="panel">
+          <h3>Xero sync</h3>
+          <p class="note">Sample activity showing what the integration would record.</p>
+          <div class="tablewrap"><table><thead><tr><th>Time</th><th>Record</th><th>Status</th></tr></thead><tbody id="xero"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <span>Davis &amp; White Fine Wine Merchant · QLD Liquor Licence 209435 · QLD Auctioneer Licences 4483836 &amp; 4483847 · ABN 51 127 907 537</span>
+  <span>Under the Liquor Act 1992 it is an offence to supply liquor to a person under 18.</span>
+</div></footer>
+
+<div id="drawerRoot"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(function(){
+const AUD = new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'});
+const AUD0 = new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0});
+const $ = s => document.querySelector(s);
+const ME = 'you';
+const SOFT = 5*60*1000;
+const settings = {bp:15, sc:15, dtype:'pct', dval:1.5, dmin:0};
+
+const SAMPLE = [
+ {name:'Penfolds Bin 389 Cabernet Shiraz', vintage:'2016', cat:'red', units:6, size:'750ml', closure:'Cork', ullage:'Into neck', label:'Excellent', lo:85, hi:110, res:80, glass:'#3b1a1f', shape:'bordeaux'},
+ {name:'Henschke Mount Edelstone Shiraz', vintage:'2012', cat:'red', units:3, size:'750ml', closure:'Screwcap', ullage:'Full', label:'Good', lo:170, hi:220, res:160, glass:'#2f1418', shape:'burgundy'},
+ {name:'Lagavulin 16 Year Old Islay Single Malt', vintage:'NV', cat:'whisky', units:1, size:'700ml', closure:'Stopper', ullage:'Full', label:'Excellent', lo:120, hi:150, res:110, glass:'#8a4b12', shape:'whisky'},
+ {name:'Leeuwin Estate Art Series Chardonnay', vintage:'2017', cat:'white', units:6, size:'750ml', closure:'Screwcap', ullage:'Full', label:'Excellent', lo:95, hi:125, res:90, glass:'#c9b765', shape:'burgundy'},
+ {name:'Wynns Coonawarra John Riddoch Cabernet', vintage:'2010', cat:'red', units:2, size:'750ml', closure:'Cork', ullage:'Base of neck', label:'Lightly scuffed', lo:130, hi:170, res:0, glass:'#3a1a1d', shape:'bordeaux'},
+ {name:'Moët & Chandon Dom Pérignon', vintage:'2012', cat:'white', units:1, size:'750ml', closure:'Cork', ullage:'Full', label:'Excellent', lo:260, hi:320, res:250, glass:'#25382c', shape:'champagne'},
+ {name:'Glenfarclas 25 Year Old Speyside', vintage:'NV', cat:'whisky', units:1, size:'700ml', closure:'Stopper', ullage:'Full', label:'Good', lo:280, hi:350, res:270, glass:'#7a3c0e', shape:'whisky'},
+ {name:'Torbreck RunRig Shiraz Viognier', vintage:'2008', cat:'red', units:1, size:'1.5L', closure:'Cork', ullage:'Into neck', label:'Excellent', lo:480, hi:600, res:450, glass:'#2b1215', shape:'bordeaux'},
+];
+const RIVALS = ['Bidder 2187','Bidder 3301','Bidder 1756','Bidder 4420','Bidder 2093'];
+
+let lots=[], watch=new Set(), filter='all', openId=null, xeroLog=[], uploaded=[];
+
+function inc(v){ return v<100?1:v<500?5:v<1000?10:25; }
+function cardTotal(bid,units){ return bid*units*(1+settings.bp/100); }
+function cashOf(card){ if(settings.dtype==='pct'){ return card>=settings.dmin? card*(1-settings.dval/100):card; } return card; }
+
+function build(){
+  const now=Date.now();
+  lots = SAMPLE.map((s,i)=>({...s,id:i+1,no:101+i,endsAt:now+(150+i*90)*1000,bids:[],maxes:{},current:0,leader:null,closed:false,result:null,
+    rivalCeil: s.hi*(0.85+Math.random()*0.5)}));
+  // seed some opening activity
+  lots.forEach((l,i)=>{ if(i%3!==2){ placeMax(l, RIVALS[i%RIVALS.length], l.lo+inc(l.lo)*Math.floor(Math.random()*3), now-60000*(i+1), true); } });
+  xeroLog=[{t:'Sun 2 Nov 7:42 pm',r:'Invoice INV-0418 · Bidder 3301',s:'Synced'},{t:'Sun 2 Nov 7:42 pm',r:'Contact · Bidder 3301',s:'Synced'},{t:'Mon 3 Nov 9:15 am',r:'Payment · PayID · INV-0418',s:'Synced'},{t:'Tue 4 Nov 2:10 pm',r:'Bill · Consignor payout C-0072',s:'Synced'}];
+}
+
+function placeMax(l, who, max, t, silent){
+  if(l.closed) return false;
+  t = t||Date.now();
+  const prevLeader=l.leader;
+  const prev=l.maxes[who];
+  if(prev && max<=prev.max) return false;
+  l.maxes[who]={max, t: (prev && prevLeader===who)? prev.t : t};
+  resolve(l, who, t);
+  if(!silent && Date.now()<l.endsAt && l.endsAt-Date.now()<SOFT){ l.endsAt=Date.now()+SOFT; }
+  if(prevLeader===ME && l.leader!==ME && !silent) toast(`Outbid on Lot ${l.no}. Current bid ${AUD0.format(l.current)} per bottle.`,'bad');
+  return true;
+}
+function resolve(l, who, t){
+  const arr=Object.entries(l.maxes).map(([id,v])=>({id,...v})).sort((a,b)=>b.max-a.max||a.t-b.t);
+  const top=arr[0];
+  let cur;
+  if(arr.length===1){ cur=l.lo; }
+  else { const s=arr[1]; cur = top.max===s.max? top.max : Math.min(top.max, s.max+inc(s.max)); }
+  cur=Math.max(cur,l.lo);
+  if(cur!==l.current || top.id!==l.leader){ l.bids.unshift({who:top.id, amt:cur, t}); }
+  l.current=cur; l.leader=top.id;
+}
+function nextBid(l){ return l.leader? l.current+inc(l.current) : l.lo; }
+
+function rivalTick(){
+  const now=Date.now();
+  const open=lots.filter(l=>!l.closed && l.endsAt>now);
+  if(!open.length) return;
+  if(Math.random()<0.55){
+    const l=open[Math.floor(Math.random()*open.length)];
+    const nb=nextBid(l);
+    if(nb<=l.rivalCeil && l.leader!==undefined){
+      const pool=RIVALS.filter(r=>r!==l.leader);
+      const who=pool[Math.floor(Math.random()*pool.length)];
+      const max=Math.min(l.rivalCeil, nb+inc(nb)*Math.floor(Math.random()*4));
+      placeMax(l, who, Math.round(max), now, false);
+    }
+  }
+}
+function closeTick(){
+  const now=Date.now();
+  lots.forEach(l=>{
+    if(!l.closed && now>=l.endsAt){
+      l.closed=true;
+      const met = l.res===0 || l.current>=l.res;
+      l.result = !l.leader? 'unsold' : met? 'sold':'passed';
+      if(l.leader===ME){
+        if(met){ toast(`You won Lot ${l.no}: ${l.units} × ${AUD0.format(l.current)}. It's on your invoice.`,'good');
+          xeroLog.unshift({t:'Just now',r:`Invoice line · Lot ${l.no} · Bidder 1042`,s:'Queued'}); }
+        else toast(`Lot ${l.no} closed below reserve and was passed in. Davis & White may offer it to you after the auction.`);
+      }
+    }
+  });
+}
+
+/* bottle art */
+function bottle(l){
+  const g=l.glass, lab='#efe9dc';
+  const short=(l.name.split(' ')[0]||'').slice(0,10);
+  if(l.shape==='whisky') return `<svg viewBox="0 0 80 160" aria-hidden="true"><rect x="31" y="6" width="18" height="16" rx="3" fill="#3a2a1a"/><rect x="34" y="22" width="12" height="18" fill="${g}"/><rect x="14" y="40" width="52" height="116" rx="8" fill="${g}"/><rect x="20" y="74" width="40" height="48" rx="2" fill="${lab}"/><text x="40" y="96" font-size="7" text-anchor="middle" fill="#2a2420" font-family="Georgia,serif">${short}</text><text x="40" y="108" font-size="6" text-anchor="middle" fill="#6b5d50" font-family="Georgia,serif">${l.vintage}</text></svg>`;
+  if(l.shape==='champagne') return `<svg viewBox="0 0 80 160" aria-hidden="true"><path d="M33 4h14v8h-14z" fill="#c8b07a"/><path d="M34 12h12v26c0 10 18 18 18 34v84H16V72c0-16 18-24 18-34z" fill="${g}"/><path d="M33 4h14v30H33z" fill="#c8b07a" opacity=".9"/><rect x="22" y="92" width="36" height="40" rx="2" fill="${lab}"/><text x="40" y="112" font-size="7" text-anchor="middle" fill="#2a2420" font-family="Georgia,serif">${short}</text><text x="40" y="123" font-size="6" text-anchor="middle" fill="#6b5d50" font-family="Georgia,serif">${l.vintage}</text></svg>`;
+  if(l.shape==='burgundy') return `<svg viewBox="0 0 80 160" aria-hidden="true"><rect x="34" y="4" width="12" height="14" fill="#5a1b22"/><path d="M34 18h12v20c0 14 20 22 20 40v78H14V78c0-18 20-26 20-40z" fill="${g}"/><rect x="20" y="92" width="40" height="42" rx="2" fill="${lab}"/><text x="40" y="112" font-size="7" text-anchor="middle" fill="#2a2420" font-family="Georgia,serif">${short}</text><text x="40" y="124" font-size="6" text-anchor="middle" fill="#6b5d50" font-family="Georgia,serif">${l.vintage}</text></svg>`;
+  return `<svg viewBox="0 0 80 160" aria-hidden="true"><rect x="34" y="4" width="12" height="14" fill="#5a1b22"/><path d="M34 18h12v30c0 6 16 8 16 18v90H18V66c0-10 16-12 16-18z" fill="${g}"/><rect x="22" y="88" width="36" height="44" rx="2" fill="${lab}"/><text x="40" y="108" font-size="7" text-anchor="middle" fill="#2a2420" font-family="Georgia,serif">${short}</text><text x="40" y="120" font-size="6" text-anchor="middle" fill="#6b5d50" font-family="Georgia,serif">${l.vintage}</text></svg>`;
+}
+
+function fmtLeft(ms){ if(ms<=0) return 'Closed'; const s=Math.ceil(ms/1000); const m=Math.floor(s/60), r=s%60; return m>=60? `${Math.floor(m/60)}h ${m%60}m` : `${m}:${String(r).padStart(2,'0')}`; }
+function statusPill(l){
+  if(l.closed){
+    if(l.result==='sold') return l.leader===ME? '<span class="pill good">Won</span>':'<span class="pill">Sold</span>';
+    if(l.result==='passed') return '<span class="pill warn">Passed in</span>';
+    return '<span class="pill">Unsold</span>';
+  }
+  const parts=[];
+  if(l.leader===ME) parts.push('<span class="pill good">You\'re winning</span>');
+  else if(l.maxes[ME]) parts.push('<span class="pill bad">Outbid</span>');
+  if(l.res===0) parts.push('<span class="pill">No reserve</span>');
+  else parts.push(l.leader && l.current>=l.res? '<span class="pill claret">Reserve met</span>':'<span class="pill">Reserve not met</span>');
+  return parts.join('');
+}
+
+function renderGrid(){
+  const now=Date.now();
+  let list=lots.slice();
+  if(filter==='red'||filter==='white'||filter==='whisky') list=list.filter(l=>l.cat===filter);
+  if(filter==='watch') list=list.filter(l=>watch.has(l.id));
+  if(filter==='mine') list=list.filter(l=>l.maxes[ME]);
+  $('#grid').innerHTML = list.length? list.map(l=>{
+    const shown = l.leader? l.current : l.lo;
+    const card=cardTotal(shown,l.units), cash=cashOf(card), left=l.endsAt-now;
+    return `<article class="lot ${l.closed?'closed':''}" data-id="${l.id}" tabindex="0" aria-label="Lot ${l.no}, ${l.name}">
+      <div class="art"><span class="lotno">LOT ${l.no}</span>${bottle(l)}<button class="watch" data-watch="${l.id}" aria-pressed="${watch.has(l.id)}" aria-label="Watch lot ${l.no}">★</button></div>
+      <div class="body">
+        <h3>${l.vintage!=='NV'?l.vintage+' ':''}${l.name}</h3>
+        <div class="meta">${l.units} × ${l.size} · ${l.closure} · ${l.ullage}</div>
+        <div class="pills">${statusPill(l)}</div>
+        <div class="row"><div><small class="meta">${l.leader?'Current bid':'Opening bid'} / bottle</small><div class="big num">${AUD0.format(shown)}</div></div>
+          <div style="text-align:right"><small class="meta">${l.closed?'Status':'Closes in'}</small><div class="time ${left<SOFT&&left>0?'soon':''}">${fmtLeft(left)}</div></div></div>
+        <div class="dual"><div><small>Card total</small><strong>${AUD.format(card)}</strong></div><div class="cash"><small>Cash / PayID</small><strong>${AUD.format(cash)}</strong></div></div>
+      </div></article>`;
+  }).join('') : '<p class="empty">No lots match this filter yet.</p>';
+  const winning=lots.filter(l=>!l.closed&&l.leader===ME).length;
+  $('#s-winning').textContent=winning;
+  const nxt=lots.filter(l=>!l.closed).sort((a,b)=>a.endsAt-b.endsAt)[0];
+  $('#s-next').textContent= nxt? `Lot ${nxt.no} · ${fmtLeft(nxt.endsAt-now)}` : 'All closed';
+}
+
+function renderDrawer(){
+  const root=$('#drawerRoot');
+  if(openId==null){ root.innerHTML=''; return; }
+  const l=lots.find(x=>x.id===openId); if(!l){openId=null;root.innerHTML='';return;}
+  const now=Date.now(), nb=nextBid(l), left=l.endsAt-now;
+  const shown=l.leader?l.current:l.lo;
+  const card=cardTotal(shown,l.units), cash=cashOf(card);
+  const nbCard=cardTotal(nb,l.units), nbCash=cashOf(nbCard);
+  const my=l.maxes[ME];
+  const keepInput = document.activeElement && document.activeElement.id==='maxin' ? document.activeElement.value : null;
+  const oldD=root.querySelector('.drawer'); const keepScroll=oldD? oldD.scrollTop : 0;
+  root.innerHTML = `<div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="Lot ${l.no}">
+    <button class="close" data-close aria-label="Close">×</button>
+    <div class="art">${bottle(l)}</div>
+    <div><div class="meta num">LOT ${l.no}</div><h2>${l.vintage!=='NV'?l.vintage+' ':''}${l.name}</h2></div>
+    <div class="pills">${statusPill(l)}</div>
+    <dl class="spec">
+      <dt>Quantity</dt><dd>${l.units} × ${l.size} (sold as one lot)</dd>
+      <dt>Closure</dt><dd>${l.closure}</dd>
+      <dt>Ullage / fill</dt><dd>${l.ullage}</dd>
+      <dt>Label</dt><dd>${l.label}</dd>
+      <dt>Estimate</dt><dd class="num">${AUD0.format(l.lo)} – ${AUD0.format(l.hi)} per bottle</dd>
+      <dt>Storage</dt><dd>Temperature-controlled, Northgate QLD</dd>
+    </dl>
+    <div class="bidbox">
+      <div class="row"><div><small class="meta">${l.leader?'Current bid':'Opening bid'} / bottle</small><div class="big num">${AUD0.format(shown)}</div></div>
+        <div style="text-align:right"><small class="meta">${l.closed?'Status':'Closes in'}</small><div class="time ${left<SOFT&&left>0?'soon':''}">${fmtLeft(left)}</div></div></div>
+      <div class="dual"><div><small>Card total now</small><strong>${AUD.format(card)}</strong></div><div class="cash"><small>Cash / PayID now</small><strong>${AUD.format(cash)}</strong></div></div>
+      ${l.closed? `<p class="note">Bidding has closed on this lot.</p>` : `
+      <button class="btn primary" id="quick">Bid ${AUD0.format(nb)} per bottle · ${AUD.format(nbCard)} card / ${AUD.format(nbCash)} cash</button>
+      <div class="bidrow"><input id="maxin" type="number" inputmode="numeric" min="${nb}" step="1" placeholder="Maximum bid per bottle (min ${nb})" aria-label="Maximum bid per bottle"><button class="btn" id="setmax">Set maximum</button></div>
+      <p class="note">${my? `Your maximum is ${AUD0.format(my.max)} per bottle. We bid for you in steps up to that amount.`:'Set a maximum and we bid for you in the smallest steps needed.'} A bid in the last 5 minutes keeps the lot open until 5 minutes pass with no new bid.</p>`}
+      <p class="note">Totals are ${l.units} bottle${l.units>1?'s':''} × bid + ${settings.bp}% buyer's premium, GST included. ${settings.dtype==='pct'?`Paying by cash or PayID saves ${settings.dval}%.`:`Paying by cash or PayID saves ${AUD.format(settings.dval)} per invoice.`} Freight is added on the invoice.</p>
+    </div>
+    <div><h3 style="font-size:14px;margin-bottom:6px">Bid history</h3><div class="hist">${l.bids.length? l.bids.slice(0,20).map(b=>`<div><span class="${b.who===ME?'you':''}">${b.who===ME?'You':b.who}</span><span class="num">${AUD0.format(b.amt)}</span></div>`).join('') : '<span class="note">No bids yet.</span>'}</div></div>
+  </aside>`;
+  const newD=root.querySelector('.drawer'); if(newD) newD.scrollTop=keepScroll;
+  if(keepInput!==null){ const i=$('#maxin'); if(i){ i.value=keepInput; i.focus(); } }
+}
+
+function invoiceData(){
+  const won=lots.filter(l=>l.closed&&l.result==='sold'&&l.leader===ME);
+  const winning=lots.filter(l=>!l.closed&&l.leader===ME);
+  return {won, winning};
+}
+function renderAccount(){
+  const rows=lots.filter(l=>l.maxes[ME]);
+  $('#mybids').innerHTML = rows.length? rows.map(l=>`<tr><td>Lot ${l.no}<br><span class="meta">${l.name}</span></td><td class="r num">${AUD0.format(l.current)}</td><td class="r num">${AUD0.format(l.maxes[ME].max)}</td><td>${statusPill(l)}</td></tr>`).join('') : `<tr><td colspan="4" class="empty">You haven't bid yet. Open a lot in the Auction view to place a bid.</td></tr>`;
+  const {won,winning}=invoiceData();
+  const list = won.length? won : winning;
+  const label = won.length? 'Lots won' : 'If bidding closed now';
+  if(!list.length){ $('#invoice').innerHTML='<p class="empty">Win a lot and your invoice appears here, with card and cash totals side by side.</p>'; return; }
+  const hammer=list.reduce((s,l)=>s+l.current*l.units,0);
+  const prem=hammer*settings.bp/100;
+  const bottles=list.reduce((s,l)=>s+l.units,0);
+  const freight= Math.ceil(bottles/12)*25;
+  const card=hammer+prem;
+  let cashLots = settings.dtype==='pct'? (card>=settings.dmin? card*(1-settings.dval/100):card) : (card>=settings.dmin? Math.max(0,card-settings.dval):card);
+  const cardTotalAll=card+freight, cashTotalAll=cashLots+freight;
+  $('#invoice').innerHTML = `<p class="note">${label} · due within 7 days · INV-0431 (sample)</p>
+   ${list.map(l=>`<div class="line"><span>Lot ${l.no} · ${l.units} × ${AUD0.format(l.current)}</span><span class="num">${AUD.format(l.current*l.units)}</span></div>`).join('')}
+   <div class="line"><span>Buyer's premium ${settings.bp}%</span><span class="num">${AUD.format(prem)}</span></div>
+   <div class="line"><span>Freight · ${bottles} bottle${bottles>1?'s':''} (example rate)</span><span class="num">${AUD.format(freight)}</span></div>
+   <div class="line tot"><span>Total (card)</span><span class="num">${AUD.format(cardTotalAll)}</span></div>
+   <div class="line"><span class="meta">Includes GST of</span><span class="num meta">${AUD.format(cardTotalAll/11)}</span></div>
+   <div class="paybox">
+     <div><small>Pay by card</small><strong>${AUD.format(cardTotalAll)}</strong><p class="note">Charged to your card on file.</p></div>
+     <div class="cash"><small>Pay by PayID or cash</small><strong>${AUD.format(cashTotalAll)}</strong><p class="note">You save ${AUD.format(cardTotalAll-cashTotalAll)}. PayID reference DW-0431.</p></div>
+   </div>`;
+}
+
+function renderAdmin(){
+  $('#adminlots').innerHTML = lots.map(l=>{
+    const st = l.closed? (l.result==='sold'?'<span class="pill good">Sold</span>':l.result==='passed'?'<span class="pill warn">Passed in</span>':'<span class="pill">Unsold</span>') : (l.res===0||(l.leader&&l.current>=l.res)?'<span class="pill claret">Reserve met</span>':'<span class="pill">Below reserve</span>');
+    return `<tr><td class="num">${l.no}</td><td>${l.vintage!=='NV'?l.vintage+' ':''}${l.name}</td><td class="r num">${l.units}</td><td class="r num">${AUD0.format(l.lo)}–${AUD0.format(l.hi)}</td><td class="r num">${l.res?AUD0.format(l.res):'None'}</td><td class="r num">${AUD0.format(l.leader?l.current:0)}</td><td class="r num">${l.bids.length}</td><td>${st}</td></tr>`;
+  }).join('');
+  $('#xero').innerHTML = xeroLog.slice(0,8).map(x=>`<tr><td class="num">${x.t}</td><td>${x.r}</td><td><span class="pill ${x.s==='Synced'?'good':'warn'}">${x.s}</span></td></tr>`).join('');
+  const sel=$('#ra-lot'); const cur=sel.value;
+  sel.innerHTML=lots.map(l=>`<option value="${l.id}">Lot ${l.no} · ${l.name}</option>`).join('');
+  if(cur && lots.find(l=>String(l.id)===cur)) sel.value=cur;
+  renderRA();
+}
+
+function comps(l){
+  // deterministic sample comparables around the estimate
+  let seed=l.id*9301+49297; const rnd=()=>{seed=(seed*9301+49297)%233280; return seed/233280;};
+  const mid=(l.lo+l.hi)/2; const months=['Oct 2026','Sep 2026','Aug 2026','Jun 2026','Apr 2026'];
+  return months.map((m,i)=>({date:m, src:`Australian auction ${String.fromCharCode(65+i%3)}`, size:l.size, price:Math.round(mid*(0.78+rnd()*0.42))}));
+}
+function renderRA(){
+  const id=Number($('#ra-lot').value)||lots[0]?.id; const l=lots.find(x=>x.id===id); if(!l){$('#ra').innerHTML='';return;}
+  const c=comps(l); const prices=c.map(x=>x.price).sort((a,b)=>a-b);
+  const med=prices[Math.floor(prices.length/2)];
+  const lo=Math.round(med*0.8), hi=Math.round(med*0.92);
+  const min=Math.min(...prices,l.lo,lo)*0.9, max=Math.max(...prices,l.hi)*1.08;
+  const pos=v=>((v-min)/(max-min)*100).toFixed(1)+'%';
+  $('#ra').innerHTML = `<p class="note">Sample comparables for the prototype. The real tool searches permitted public Australian auction results and your own past sales, with links to each source.</p>
+   <div class="tablewrap"><table><thead><tr><th>Date</th><th>Source</th><th>Size</th><th class="r">Hammer / btl</th></tr></thead><tbody>${c.map(x=>`<tr><td>${x.date}</td><td>${x.src}</td><td>${x.size}</td><td class="r num">${AUD0.format(x.price)}</td></tr>`).join('')}</tbody></table></div>
+   <div><div class="row"><strong>Suggested reserve</strong><span class="num">${AUD0.format(lo)} – ${AUD0.format(hi)} per bottle</span></div>
+   <div class="rangebar" aria-hidden="true"><div class="band" style="left:${pos(lo)};width:calc(${pos(hi)} - ${pos(lo)})"></div>${prices.map(p=>`<div class="dot" style="left:${pos(p)}"></div>`).join('')}<div class="dot est" style="left:${pos(l.lo)}" title="Low estimate"></div></div>
+   <div class="legend" style="margin-top:6px"><span><i></i>Comparable sale</span><span><i class="est"></i>Low estimate (opening bid)</span><span><i class="band"></i>Suggested reserve range</span></div>
+   <p class="note">Median comparable ${AUD0.format(med)}. Current reserve ${l.res?AUD0.format(l.res):'none'}. Confidence: medium (5 sales in 12 months).</p></div>
+   <div class="bidrow"><button class="btn primary small" id="usereserve" ${l.closed?'disabled':''}>Set reserve to ${AUD0.format(lo)}</button></div>`;
+}
+
+function toast(msg,kind){ const t=document.createElement('div'); t.className='toast '+(kind||''); t.textContent=msg; $('#toasts').appendChild(t); setTimeout(()=>t.remove(),5200); }
+
+function route(){
+  const v=(location.hash||'#catalogue').slice(1);
+  const view=['catalogue','account','admin'].includes(v)?v:'catalogue';
+  ['catalogue','account','admin'].forEach(n=>$('#v-'+n).hidden = n!==view);
+  document.querySelectorAll('nav.tabs a').forEach(a=>a.setAttribute('aria-current', a.dataset.view===view?'page':'false'));
+  renderAll();
+}
+function renderAll(){
+  if(!$('#v-catalogue').hidden) renderGrid();
+  if(!$('#v-account').hidden) renderAccount();
+  if(!$('#v-admin').hidden && !document.querySelector('#v-admin :focus')) renderAdmin();
+  renderDrawer();
+}
+
+/* events */
+document.addEventListener('click',e=>{
+  const w=e.target.closest('[data-watch]');
+  if(w){ e.stopPropagation(); const id=Number(w.dataset.watch); watch.has(id)?watch.delete(id):watch.add(id); renderGrid(); return; }
+  const card=e.target.closest('.lot'); if(card){ openId=Number(card.dataset.id); renderDrawer(); setTimeout(()=>{const c=document.querySelector('.drawer .close'); c&&c.focus();},0); return; }
+  if(e.target.closest('[data-close]')){ openId=null; renderDrawer(); return; }
+  const chip=e.target.closest('.chip[data-f]'); if(chip){ filter=chip.dataset.f; document.querySelectorAll('.chip[data-f]').forEach(c=>c.setAttribute('aria-pressed',c===chip)); renderGrid(); return; }
+  if(e.target.id==='quick'){ const l=lots.find(x=>x.id===openId); const nb=nextBid(l); const myMax=l.maxes[ME]?.max||0; placeMax(l,ME,myMax>=nb? myMax+inc(myMax) : nb,Date.now(),false); afterMyBid(l); return; }
+  if(e.target.id==='setmax'){ const l=lots.find(x=>x.id===openId); const v=Math.floor(Number($('#maxin').value)); const nb=nextBid(l);
+    if(!v||v<nb){ toast(`Enter at least ${AUD0.format(nb)} per bottle.`,'bad'); return; }
+    if(!placeMax(l,ME,v,Date.now(),false)){ toast('Your new maximum must be higher than your current one.','bad'); return; }
+    $('#maxin').value=''; afterMyBid(l); return; }
+  if(e.target.id==='ff'){ lots.forEach(l=>{ if(!l.closed) l.endsAt-=60000; }); closeTick(); renderAll(); return; }
+  if(e.target.id==='reset'){ watch.clear(); openId=null; build(); renderAll(); toast('Demo restarted with fresh lots.'); return; }
+  if(e.target.id==='usereserve'){ const l=lots.find(x=>x.id===Number($('#ra-lot').value)); const c=comps(l).map(x=>x.price).sort((a,b)=>a-b); l.res=Math.round(c[2]*0.8); toast(`Reserve for Lot ${l.no} set to ${AUD0.format(l.res)} per bottle.`); renderAdmin(); return; }
+  if(e.target.id==='readlabel'){ readLabel(); return; }
+  if(e.target.id==='addlot'){ addLot(); return; }
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && openId!=null){ openId=null; renderDrawer(); }
+  if((e.key==='Enter'||e.key===' ') && e.target.classList?.contains('lot')){ e.preventDefault(); openId=Number(e.target.dataset.id); renderDrawer(); }
+  if(e.key==='Enter' && e.target.id==='maxin'){ $('#setmax').click(); }
+});
+function afterMyBid(l){
+  if(l.leader===ME) toast(`You're winning Lot ${l.no} at ${AUD0.format(l.current)} per bottle.`,'good');
+  else toast(`Another bidder's maximum is higher. Current bid ${AUD0.format(l.current)}.`,'bad');
+  renderAll();
+}
+document.addEventListener('change',e=>{
+  if(e.target.id==='ra-lot') renderRA();
+  if(e.target.id==='files') handleFiles(e.target.files);
+  const map={'set-bp':'bp','set-sc':'sc','set-dtype':'dtype','set-dval':'dval','set-dmin':'dmin'};
+  if(map[e.target.id]){ const k=map[e.target.id]; settings[k]= k==='dtype'? e.target.value : Number(e.target.value)||0; toast('Settings saved. Prices update across the site.'); }
+});
+
+/* uploads */
+const drop=$('#drop');
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',e=>handleFiles(e.dataTransfer.files));
+function handleFiles(files){
+  [...files].filter(f=>f.type.startsWith('image/')).forEach(f=>{
+    const r=new FileReader(); r.onload=()=>{ uploaded.push({name:f.name,src:r.result}); $('#thumbs').innerHTML=uploaded.map(u=>`<img src="${u.src}" alt="${u.name}">`).join(''); }; r.readAsDataURL(f);
+  });
+  if(files.length) toast(`${files.length} photo${files.length>1?'s':''} added and resized.`);
+}
+function readLabel(){
+  const btn=$('#readlabel'); btn.disabled=true; btn.textContent='Reading label…';
+  setTimeout(()=>{
+    $('#a-name').value='Penfolds St Henri Shiraz'; $('#a-vintage').value='2015'; $('#a-cat').value='red'; $('#a-size').value='750ml'; $('#a-closure').value='Screwcap';
+    $('#a-lo').value=95; $('#a-hi').value=125; $('#a-res').value=90;
+    btn.disabled=false; btn.textContent='Read label'; toast('Label read: check the details before adding the lot.');
+  },1100);
+}
+function addLot(){
+  const name=$('#a-name').value.trim(); if(!name){ toast('Add the wine or spirit name first.','bad'); $('#a-name').focus(); return; }
+  const cat=$('#a-cat').value; const id=Math.max(...lots.map(l=>l.id))+1; const last=Math.max(...lots.map(l=>l.endsAt), Date.now());
+  const lo=Number($('#a-lo').value)||50, hi=Number($('#a-hi').value)||lo;
+  lots.push({id,no:100+id,name,vintage:$('#a-vintage').value||'NV',cat,units:Number($('#a-units').value)||1,size:$('#a-size').value,closure:$('#a-closure').value,ullage:$('#a-ullage').value,label:$('#a-label').value,lo,hi,res:Number($('#a-res').value)||0,
+    glass:cat==='white'?'#c9b765':cat==='whisky'?'#8a4b12':'#3b1a1f',shape:cat==='whisky'?'whisky':cat==='white'?'burgundy':'bordeaux',
+    endsAt:last+90000,bids:[],maxes:{},current:0,leader:null,closed:false,result:null,rivalCeil:hi*(0.9+Math.random()*0.4)});
+  uploaded=[]; $('#thumbs').innerHTML=''; $('#a-name').value='';
+  toast(`Lot ${100+id} added to the auction.`,'good'); renderAdmin();
+}
+
+window.addEventListener('hashchange',route);
+build(); route();
+setInterval(()=>{ closeTick(); renderAll(); },1000);
+setInterval(rivalTick,3500);
+})();
+</script>
+
+</body>
+</html>
