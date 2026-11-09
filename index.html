@@ -87,6 +87,17 @@ nav.tabs a[aria-current="page"]{color:var(--claret);border-bottom-color:var(--cl
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .big{font-size:20px;font-weight:500}
 .pills{display:flex;gap:6px;flex-wrap:wrap}
+.acts{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+.acts .btn{padding:4px 9px;font-size:11.5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+tr.editing td{background:var(--claret-soft)}
+tr.withdrawn td{color:var(--muted);text-decoration:line-through}
+tr.withdrawn td:last-child,tr.withdrawn td:nth-last-child(2){text-decoration:none}
+.lot.withdrawn{opacity:.5}
+.changed{border-left:3px solid var(--warn);background:var(--warn-soft);padding:8px 10px;font-size:13px}
+.editbar{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.panel:not(.is-editing) .editonly{display:none !important}
+.panel.is-editing{outline:2px solid var(--claret);outline-offset:-2px}
 .pill{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:2px;background:var(--surface-2);color:var(--muted)}
 .pill.good{background:var(--good-soft);color:var(--good)}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
@@ -247,12 +258,18 @@ footer .wrap{padding-block:18px;display:flex;gap:16px;flex-wrap:wrap;justify-con
       <h2>Admin console</h2>
       <div class="panel">
         <h3>Lots in this auction</h3>
-        <div class="tablewrap"><table><thead><tr><th>Lot</th><th>Wine or spirit</th><th class="r">Units</th><th class="r">Estimate / btl</th><th class="r">Reserve / btl</th><th class="r">Current / btl</th><th class="r">Bids</th><th>Status</th></tr></thead><tbody id="adminlots"></tbody></table></div>
+        <div class="tablewrap"><table><thead><tr><th>Lot</th><th>Wine or spirit</th><th class="r">Units</th><th class="r">Estimate / btl</th><th class="r">Reserve / btl</th><th class="r">Current / btl</th><th class="r">Bids</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody id="adminlots"></tbody></table></div>
+        <p class="note" style="margin-top:8px">Published lots can be edited until they close. If a lot already has bids, a change to its description needs a reason, and bidders are told what changed.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Lot change log</h3>
+        <div class="tablewrap"><table><thead><tr><th>Time</th><th>Lot</th><th>Change</th><th>Reason</th><th>Bids at time</th></tr></thead><tbody id="changelog"></tbody></table></div>
       </div>
 
       <div class="cols">
-        <div class="panel">
-          <h3>Add a lot</h3>
+        <div class="panel" id="lotpanel">
+          <div class="editbar"><h3 id="lotpanel-title">Add a lot</h3><span class="pill claret editonly" id="edit-bids"></span></div>
           <div class="drop" id="drop" tabindex="0">
             <strong>Drop bottle photos here</strong><br><span class="note">or</span>
             <label class="btn small" style="display:inline-block;margin-top:6px">Choose photos<input type="file" id="files" accept="image/*" multiple hidden></label>
@@ -271,10 +288,16 @@ footer .wrap{padding-block:18px;display:flex;gap:16px;flex-wrap:wrap;justify-con
             <label>Low estimate / btl ($)<input id="a-lo" type="number" min="1" value="80"></label>
             <label>High estimate / btl ($)<input id="a-hi" type="number" min="1" value="110"></label>
             <label>Reserve / btl ($)<input id="a-res" type="number" min="0" value="75"></label>
+            <label class="full editonly">Reason for change (shown to bidders)<input id="a-reason" placeholder="e.g. Bottle size listed incorrectly, it is a 1.5L magnum"></label>
+            <label class="full editonly">Existing bids<select id="a-bidaction">
+              <option value="keep">Keep bids and notify bidders of the change</option>
+              <option value="restart">Cancel bids and restart the lot</option>
+            </select></label>
           </div>
           <div class="bidrow" style="margin-top:12px">
             <button class="btn" id="readlabel">Read label</button>
             <button class="btn primary" id="addlot">Add to auction</button>
+            <button class="btn" id="canceledit" hidden>Cancel</button>
           </div>
         </div>
 
@@ -339,7 +362,11 @@ const SAMPLE = [
 ];
 const RIVALS = ['Bidder 2187','Bidder 3301','Bidder 1756','Bidder 4420','Bidder 2093'];
 
-let lots=[], watch=new Set(), filter='all', openId=null, xeroLog=[], uploaded=[];
+let lots=[], watch=new Set(), filter='all', openId=null, xeroLog=[], uploaded=[], editingId=null, changeLog=[];
+// Fields that describe the bottle. Changing one after bids are placed needs a reason and bidder notice.
+const MATERIAL = {name:'Name', vintage:'Vintage', units:'Bottles in lot', size:'Size', closure:'Closure', ullage:'Ullage / fill', label:'Label'};
+const FIELDS = {...MATERIAL, cat:'Category', lo:'Low estimate', hi:'High estimate', res:'Reserve'};
+function stamp(){ return new Date().toLocaleString('en-AU',{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}); }
 
 function inc(v){ return v<100?1:v<500?5:v<1000?10:25; }
 function cardTotal(bid,units){ return bid*units*(1+settings.bp/100); }
@@ -425,6 +452,18 @@ function drawn(l){
 
 function fmtLeft(ms){ if(ms<=0) return 'Closed'; const s=Math.ceil(ms/1000); const m=Math.floor(s/60), r=s%60; return m>=60? `${Math.floor(m/60)}h ${m%60}m` : `${m}:${String(r).padStart(2,'0')}`; }
 function statusPill(l){
+  if(l.result==='withdrawn') return '<span class="pill bad">Withdrawn</span>';
+  const fix = l.changes && l.changes.some(c=>c.material) ? '<span class="pill warn">Details updated</span>' : '';
+  return fix + statusPillBase(l);
+}
+function changeNote(l){
+  if(l.result==='withdrawn') return `<div class="changed">This lot was withdrawn by Davis &amp; White${l.withdrawReason?`: ${esc(l.withdrawReason)}`:''}. Any bids on it are cancelled.</div>`;
+  const m=(l.changes||[]).filter(c=>c.material); if(!m.length) return '';
+  const c=m[m.length-1];
+  return `<div class="changed"><strong>Updated ${c.t}.</strong> ${c.summary}. ${c.reason?esc(c.reason)+'.':''}</div>`;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+function statusPillBase(l){
   if(l.closed){
     if(l.result==='sold') return l.leader===ME? '<span class="pill good">Won</span>':'<span class="pill">Sold</span>';
     if(l.result==='passed') return '<span class="pill warn">Passed in</span>';
@@ -464,6 +503,7 @@ function renderGrid(){
   list.forEach(l=>{
     const art=grid.querySelector(`.lot[data-id="${l.id}"]`); if(!art) return;
     art.classList.toggle('closed',l.closed);
+    art.classList.toggle('withdrawn',l.result==='withdrawn');
     art.querySelector('[data-body]').innerHTML=lotBody(l,now);
     art.querySelector('[data-watch]').setAttribute('aria-pressed',watch.has(l.id));
   });
@@ -496,6 +536,7 @@ function renderDrawer(){
   const prevInput = $('#maxin') ? $('#maxin').value : '';
   $('#d-dyn').innerHTML = `<div style="display:flex;flex-direction:column;gap:16px">
     <div class="pills">${statusPill(l)}</div>
+    ${changeNote(l)}
     <dl class="spec">
       <dt>Quantity</dt><dd>${l.units} × ${l.size} (sold as one lot)</dd>
       <dt>Closure</dt><dd>${l.closure}</dd>
@@ -553,9 +594,12 @@ function renderAccount(){
 
 function renderAdmin(){
   $('#adminlots').innerHTML = lots.map(l=>{
-    const st = l.closed? (l.result==='sold'?'<span class="pill good">Sold</span>':l.result==='passed'?'<span class="pill warn">Passed in</span>':'<span class="pill">Unsold</span>') : (l.res===0||(l.leader&&l.current>=l.res)?'<span class="pill claret">Reserve met</span>':'<span class="pill">Below reserve</span>');
-    return `<tr><td class="num">${l.no}</td><td>${l.vintage!=='NV'?l.vintage+' ':''}${l.name}</td><td class="r num">${l.units}</td><td class="r num">${AUD0.format(l.lo)}–${AUD0.format(l.hi)}</td><td class="r num">${l.res?AUD0.format(l.res):'None'}</td><td class="r num">${AUD0.format(l.leader?l.current:0)}</td><td class="r num">${l.bids.length}</td><td>${st}</td></tr>`;
+    const st = l.result==='withdrawn'? '<span class="pill bad">Withdrawn</span>' : l.closed? (l.result==='sold'?'<span class="pill good">Sold</span>':l.result==='passed'?'<span class="pill warn">Passed in</span>':'<span class="pill">Unsold</span>') : (l.res===0||(l.leader&&l.current>=l.res)?'<span class="pill claret">Reserve met</span>':'<span class="pill">Below reserve</span>');
+    const edited = l.changes&&l.changes.length? ' <span class="pill warn">Edited</span>':'';
+    const acts = l.closed? '<span class="note">Closed</span>' : `<div class="acts"><button class="btn" data-edit="${l.id}">Edit</button><button class="btn" data-withdraw="${l.id}">Withdraw</button></div>`;
+    return `<tr class="${l.id===editingId?'editing':''} ${l.result==='withdrawn'?'withdrawn':''}"><td class="num">${l.no}</td><td>${l.vintage!=='NV'?l.vintage+' ':''}${l.name}<br><span class="meta">${l.units} × ${l.size}</span>${edited}</td><td class="r num">${l.units}</td><td class="r num">${AUD0.format(l.lo)}–${AUD0.format(l.hi)}</td><td class="r num">${l.res?AUD0.format(l.res):'None'}</td><td class="r num">${AUD0.format(l.leader?l.current:0)}</td><td class="r num">${l.bids.length}</td><td>${st}</td><td class="r">${acts}</td></tr>`;
   }).join('');
+  $('#changelog').innerHTML = changeLog.length? changeLog.slice(0,20).map(c=>`<tr><td class="num">${c.t}</td><td class="num">${c.no}</td><td>${c.summary}</td><td>${c.reason?esc(c.reason):'<span class="meta">Not required (no bids)</span>'}</td><td class="num">${c.bids}${c.restart?' (cancelled)':''}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No changes yet. Every edit and withdrawal is recorded here.</td></tr>';
   $('#xero').innerHTML = xeroLog.slice(0,8).map(x=>`<tr><td class="num">${x.t}</td><td>${x.r}</td><td><span class="pill ${x.s==='Synced'?'good':'warn'}">${x.s}</span></td></tr>`).join('');
   const sel=$('#ra-lot'); const cur=sel.value;
   sel.innerHTML=lots.map(l=>`<option value="${l.id}">Lot ${l.no} · ${l.name}</option>`).join('');
@@ -614,10 +658,13 @@ document.addEventListener('click',e=>{
     if(!placeMax(l,ME,v,Date.now(),false)){ toast('Your new maximum must be higher than your current one.','bad'); return; }
     $('#maxin').value=''; afterMyBid(l); return; }
   if(e.target.id==='ff'){ lots.forEach(l=>{ if(!l.closed) l.endsAt-=60000; }); closeTick(); renderAll(); return; }
-  if(e.target.id==='reset'){ watch.clear(); openId=null; build(); delete $('#grid').dataset.key; renderAll(); toast('Demo restarted with fresh lots.'); return; }
+  if(e.target.id==='reset'){ watch.clear(); openId=null; changeLog=[]; if(editingId!=null) endEdit(true); build(); delete $('#grid').dataset.key; renderAll(); toast('Demo restarted with fresh lots.'); return; }
   if(e.target.id==='usereserve'){ const l=lots.find(x=>x.id===Number($('#ra-lot').value)); const c=comps(l).map(x=>x.price).sort((a,b)=>a-b); l.res=Math.round(c[2]*0.8); toast(`Reserve for Lot ${l.no} set to ${AUD0.format(l.res)} per bottle.`); renderAdmin(); return; }
   if(e.target.id==='readlabel'){ readLabel(); return; }
-  if(e.target.id==='addlot'){ addLot(); return; }
+  if(e.target.id==='addlot'){ editingId!=null? saveEdit() : addLot(); return; }
+  if(e.target.id==='canceledit'){ endEdit(); return; }
+  const ed=e.target.closest('[data-edit]'); if(ed){ startEdit(Number(ed.dataset.edit)); return; }
+  const wd=e.target.closest('[data-withdraw]'); if(wd){ withdrawLot(Number(wd.dataset.withdraw)); return; }
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape' && openId!=null){ openId=null; renderDrawer(); }
@@ -664,6 +711,107 @@ function addLot(){
     endsAt:last+90000,bids:[],maxes:{},current:0,leader:null,closed:false,result:null,rivalCeil:hi*(0.9+Math.random()*0.4)});
   uploaded=[]; $('#thumbs').innerHTML=''; $('#a-name').value='';
   toast(`Lot ${100+id} added to the auction.`,'good'); renderAdmin();
+}
+
+/* edit and withdraw published lots */
+const FORM = {name:'a-name', vintage:'a-vintage', cat:'a-cat', units:'a-units', size:'a-size', closure:'a-closure', ullage:'a-ullage', label:'a-label', lo:'a-lo', hi:'a-hi', res:'a-res'};
+const NUMS = ['units','lo','hi','res'];
+const MONEY = ['lo','hi','res'];
+function fmtVal(k,v){ return MONEY.includes(k)? (k==='res'&&!v?'none':AUD0.format(v)) : String(v); }
+function setEditMode(on){
+  $('#lotpanel').classList.toggle('is-editing',on);
+  $('#addlot').textContent = on? 'Save changes' : 'Add to auction';
+  $('#canceledit').hidden = !on;
+  $('#readlabel').hidden = on;
+}
+function startEdit(id){
+  const l=lots.find(x=>x.id===id); if(!l||l.closed) return;
+  editingId=id;
+  Object.entries(FORM).forEach(([k,el])=>{ $('#'+el).value=l[k]; });
+  const n=l.bids.length, people=Object.keys(l.maxes).length;
+  $('#lotpanel-title').textContent=`Edit lot ${l.no}`;
+  $('#edit-bids').textContent = n? `${n} bid${n>1?'s':''} from ${people} bidder${people>1?'s':''}` : 'No bids yet';
+  $('#a-reason').value=''; $('#a-bidaction').value='keep';
+  // reason and bid handling only matter once someone has bid
+  $('#a-reason').closest('label').style.display = n? '' : 'none';
+  $('#a-bidaction').closest('label').style.display = n? '' : 'none';
+  uploaded=[]; $('#thumbs').innerHTML = l.img? `<img src="${l.img}" alt="Current photo">` : '';
+  setEditMode(true); renderAdmin();
+  $('#lotpanel').scrollIntoView({behavior:'smooth',block:'start'}); $('#a-name').focus({preventScroll:true});
+}
+function endEdit(silent){
+  editingId=null; uploaded=[]; $('#thumbs').innerHTML='';
+  const def={name:'',vintage:'',cat:'red',units:1,size:'750ml',closure:'Cork',ullage:'Into neck',label:'Excellent',lo:80,hi:110,res:75};
+  Object.entries(FORM).forEach(([k,el])=>{ $('#'+el).value=def[k]; });
+  $('#lotpanel-title').textContent='Add a lot';
+  setEditMode(false);
+  if(!silent) renderAdmin();
+}
+function saveEdit(){
+  const l=lots.find(x=>x.id===editingId);
+  if(!l||l.closed){ toast('This lot has closed and can no longer be edited.','bad'); endEdit(); return; }
+  const next={};
+  Object.entries(FORM).forEach(([k,el])=>{ const v=$('#'+el).value; next[k]= NUMS.includes(k)? (Number(v)||0) : v.trim(); });
+  if(!next.name){ toast('The lot needs a name.','bad'); $('#a-name').focus(); return; }
+  if(!next.vintage) next.vintage='NV';
+  if(next.units<1) next.units=1;
+  if(next.lo<1){ toast('Low estimate must be at least $1.','bad'); return; }
+  if(next.hi<next.lo){ toast('High estimate can\'t be below the low estimate.','bad'); return; }
+  const diffs=Object.keys(FIELDS).filter(k=>String(next[k])!==String(l[k]));
+  const newPhoto=uploaded.length>0;
+  if(!diffs.length && !newPhoto){ toast('No changes to save.'); return; }
+
+  const hasBids=l.bids.length>0;
+  const material=diffs.some(k=>k in MATERIAL) || newPhoto;
+  const restart=hasBids && $('#a-bidaction').value==='restart';
+  const reason=$('#a-reason').value.trim();
+  if(hasBids && material && !reason){ toast('Bidders will see this change. Add a reason first.','bad'); $('#a-reason').focus(); return; }
+  const raisesReserve = l.res===0? next.res>0 : next.res>l.res;
+  if(hasBids && !restart && raisesReserve){
+    toast('The reserve can\'t be raised once bidding has started. Lower it, or cancel bids and restart the lot.','bad'); return; }
+  if(hasBids && !restart && next.lo>l.current){ toast(`The low estimate sets the opening bid, so it can't go above the current bid of ${AUD0.format(l.current)} while bids stand.`,'bad'); return; }
+
+  const people=Object.keys(l.maxes).length, bidsNow=l.bids.length;
+  const iBid=!!l.maxes[ME];
+  const parts=diffs.map(k=>`${FIELDS[k]} ${fmtVal(k,l[k])} → ${fmtVal(k,next[k])}`);
+  if(newPhoto) parts.push('Photo replaced');
+  const summary=parts.join('; ');
+
+  Object.assign(l,next);
+  if(diffs.includes('cat')){ l.glass=l.cat==='white'?'#25382c':l.cat==='whisky'?'#c9a24a':'#3b1a1f'; l.shape=l.cat==='white'?'champagne':'bordeaux'; }
+  if(newPhoto) l.img=uploaded[0].src;
+  if(restart){
+    l.bids=[]; l.maxes={}; l.current=0; l.leader=null;
+    l.endsAt=Math.max(l.endsAt, Date.now()+SOFT*2);
+  } else if(hasBids && material){
+    // give bidders time to review the corrected lot before it closes
+    l.endsAt=Math.max(l.endsAt, Date.now()+SOFT);
+  }
+  const rec={t:stamp(), no:l.no, summary, reason, bids:bidsNow, material: hasBids&&material, restart};
+  (l.changes=l.changes||[]).push(rec); changeLog.unshift(rec);
+
+  if(hasBids && material){
+    toast(restart? `Lot ${l.no} updated and restarted. ${people} bidder${people>1?'s were':' was'} told their bids were cancelled.` : `Lot ${l.no} updated. ${people} bidder${people>1?'s':''} emailed about the change.`,'good');
+    if(iBid) setTimeout(()=>toast(restart? `Lot ${l.no} was corrected and restarted, so your bid was cancelled. ${reason}.` : `A lot you bid on changed. Lot ${l.no}: ${summary}. Check it still suits you.`,'bad'),900);
+  } else toast(`Lot ${l.no} saved.`,'good');
+
+  delete $('#grid').dataset.key; delete $('#drawerRoot').dataset.id;
+  endEdit(true); renderAll(); renderAdmin();
+}
+function withdrawLot(id){
+  const l=lots.find(x=>x.id===id); if(!l||l.closed) return;
+  const n=l.bids.length;
+  const reason=prompt(`Withdraw Lot ${l.no} (${l.name})?${n?`\n\nIt has ${n} bid${n>1?'s':''}. They will be cancelled and bidders told.`:''}\n\nReason:`, '');
+  if(reason===null) return;
+  if(n && !reason.trim()){ toast('A reason is needed to withdraw a lot with bids.','bad'); return; }
+  const people=Object.keys(l.maxes).length, iBid=!!l.maxes[ME];
+  l.result='withdrawn'; l.closed=true; l.endsAt=Date.now(); l.withdrawReason=reason.trim();
+  const rec={t:stamp(), no:l.no, summary:'Lot withdrawn', reason:reason.trim(), bids:n, material:true, restart:n>0};
+  (l.changes=l.changes||[]).push(rec); changeLog.unshift(rec);
+  if(editingId===id) endEdit(true);
+  toast(`Lot ${l.no} withdrawn.${n?` ${people} bidder${people>1?'s':''} notified.`:''}`,'good');
+  if(iBid) setTimeout(()=>toast(`Lot ${l.no} was withdrawn and your bid cancelled.`,'bad'),900);
+  renderAll(); renderAdmin();
 }
 
 window.addEventListener('hashchange',route);
